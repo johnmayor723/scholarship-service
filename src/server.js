@@ -6,6 +6,7 @@ const config = require("./config");
 const { crawlAll, seedSources } = require("./crawler");
 const { seedKnownCurrentSessionRecord } = require("./seed");
 const { safeJson, isoNow } = require("./utils");
+const nigeriaScholarshipsRoutes = require("./nigeriaScholarshipsRoutes");
 
 const app = express();
 app.use(helmet());
@@ -80,6 +81,8 @@ app.get("/api/sources", (_req, res) => {
     FROM source_registry ORDER BY trust_level,name`).all();
   res.json({ success: true, data: rows, meta: { count: rows.length } });
 });
+
+app.use("/api/nigeria-scholarships", nigeriaScholarshipsRoutes);
 
 app.get("/api/crawl-runs", (_req, res) => {
   const rows = db.prepare("SELECT * FROM crawl_runs ORDER BY id DESC LIMIT 20").all();

@@ -171,17 +171,41 @@ app.post("/api/admin/scholarships", requireAdmin, (req, res) => {
 });
 
 app.patch("/api/admin/scholarships/:id/verification", requireAdmin, (req, res) => {
-  const { status, verificationNotes, verified } = req.body || {};
+  const { status, verificationNotes, verified, deadline, applicationUrl } = req.body || {};
   const allowedStatuses = ["upcoming", "open", "closed", "suspended", "unconfirmed", "review_required", "archived"];
   if (status && !allowedStatuses.includes(status)) return res.status(400).json({ success: false, error: "Invalid status" });
+  if (deadline !== undefined && deadline !== null) {
+    const parsed = new Date(deadline);
+    if (Number.isNaN(parsed.valueOf())) return res.status(400).json({ success: false, error: "Invalid deadline date" });
+  }
+  if (applicationUrl !== undefined && applicationUrl !== null) {
+    try { new URL(applicationUrl); } catch { return res.status(400).json({ success: false, error: "Invalid applicationUrl" }); }
+  }
   const row = db.prepare("SELECT id FROM scholarships WHERE id=?").get(req.params.id);
   if (!row) return res.status(404).json({ success: false, error: "Scholarship not found" });
   const now = isoNow();
+  // deadline/applicationUrl: explicit `null` clears the field, `undefined` (key omitted)
+  // leaves it as-is -- a confirmed-null deadline is a real editorial fact, distinct from
+  // "field not sent". Empty string is rejected by the date/URL validation above, not
+  // treated as a clear sentinel.
   db.prepare(`UPDATE scholarships SET status=COALESCE(?,status), verification_notes=COALESCE(?,verification_notes),
-    verified_at=CASE WHEN ?=1 THEN ? WHEN ?=0 THEN NULL ELSE verified_at END, updated_at=? WHERE id=?`)
+    verified_at=CASE WHEN ?=1 THEN ? WHEN ?=0 THEN NULL ELSE verified_at END,
+    deadline=CASE WHEN ? THEN ? ELSE deadline END,
+    application_url=CASE WHEN ? THEN ? ELSE application_url END,
+    updated_at=? WHERE id=?`)
     .run(status || null, verificationNotes || null, verified === true ? 1 : verified === false ? 0 : -1,
-      now, verified === true ? 1 : verified === false ? 0 : -1, now, req.params.id);
+      now, verified === true ? 1 : verified === false ? 0 : -1,
+      deadline !== undefined ? 1 : 0, deadline || null,
+      applicationUrl !== undefined ? 1 : 0, applicationUrl || null,
+      now, req.params.id);
   res.json({ success: true, data: serialize(db.prepare("SELECT * FROM scholarships WHERE id=?").get(req.params.id)) });
+});
+
+app.delete("/api/admin/scholarships/:id", requireAdmin, (req, res) => {
+  const row = db.prepare("SELECT id FROM scholarships WHERE id=?").get(req.params.id);
+  if (!row) return res.status(404).json({ success: false, error: "Scholarship not found" });
+  db.prepare("DELETE FROM scholarships WHERE id=?").run(req.params.id);
+  res.json({ success: true, data: { id: req.params.id, deleted: true } });
 });
 
 app.use((req, res) => res.status(404).json({ success: false, error: "Route not found" }));
